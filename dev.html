@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Journey Widget — Dev Harness</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 24px;
+      gap: 20px;
+      transition: background 0.3s, color 0.3s;
+    }
+
+    body.dark {
+      background: #0f0f1a;
+      color: #e9ecef;
+    }
+
+    /* ── Widget frame ──────────────────────────────────── */
+    #widget-frame {
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);
+      overflow: hidden;
+      height: 600px;
+      flex-shrink: 0;
+      transition: width 0.2s ease, background 0.3s;
+    }
+
+    body.dark #widget-frame {
+      background: #1a1a2e;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    journey-widget {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ── Control panel ─────────────────────────────────── */
+    #controls {
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);
+      padding: 20px;
+      width: 260px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      font-size: 13px;
+      max-height: 600px;
+      overflow-y: auto;
+      transition: background 0.3s, color 0.3s;
+    }
+
+    body.dark #controls {
+      background: #1e1e38;
+      color: #e9ecef;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    .controls-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #6c757d;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    body.dark .controls-title { color: #8b8fa8; }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #adb5bd;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+
+    body.dark .section-label { color: #6c757d; }
+
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    button {
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid #dee2e6;
+      background: #f8f9fa;
+      color: #212529;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    body.dark button {
+      background: #252540;
+      border-color: #3a3a5c;
+      color: #e9ecef;
+    }
+
+    button:hover { background: #e9ecef; border-color: #ced4da; }
+    body.dark button:hover { background: #2e2e50; border-color: #4a4a6c; }
+
+    button.primary {
+      background: #0d6efd;
+      border-color: #0d6efd;
+      color: #fff;
+    }
+    button.primary:hover { background: #0b5ed7; border-color: #0b5ed7; }
+
+    button.danger {
+      background: #fff0f0;
+      border-color: #f5c2c7;
+      color: #dc3545;
+    }
+    body.dark button.danger { background: #2a1a1e; border-color: #6d2533; }
+    button.danger:hover { background: #f5c2c7; }
+
+    .icon { font-size: 14px; }
+
+    .slider-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .slider-row input[type=range] {
+      width: 100%;
+      cursor: pointer;
+    }
+
+    .slider-val {
+      font-size: 12px;
+      color: #6c757d;
+      font-weight: 500;
+    }
+    body.dark .slider-val { color: #8b8fa8; }
+
+    .log-box {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 10px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      color: #495057;
+      max-height: 110px;
+      overflow-y: auto;
+      line-height: 1.7;
+    }
+    body.dark .log-box {
+      background: #12121e;
+      border-color: #3a3a5c;
+      color: #8b8fa8;
+    }
+
+    .log-line { display: block; }
+    .log-line.ok   { color: #198754; }
+    .log-line.err  { color: #dc3545; }
+    .log-line.info { color: #0d6efd; }
+
+    .divider {
+      height: 1px;
+      background: #e9ecef;
+    }
+    body.dark .divider { background: #3a3a5c; }
+
+    #api-error-toggle {
+      font-size: 10px;
+      padding: 4px 8px;
+      align-self: flex-start;
+    }
+    #api-error-toggle.active {
+      background: #fff3cd;
+      border-color: #ffc107;
+      color: #856404;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="widget-frame" style="width: 320px;">
+    <journey-widget id="widget" base-url="__MOCK__"></journey-widget>
+  </div>
+
+  <div id="controls">
+    <div class="controls-title">Dev Harness</div>
+
+    <div>
+      <div class="section-label">Interaction Events</div>
+      <div class="btn-group">
+        <button class="primary" onclick="fireAccepted()">
+          <span class="icon">📞</span> Fire: contact accepted
+        </button>
+        <button onclick="fireEnded()">
+          <span class="icon">🔴</span> Fire: contact ended
+        </button>
+        <button onclick="fireRefreshed()">
+          <span class="icon">🔄</span> Fire: contact refreshed
+        </button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div>
+      <div class="section-label">Appearance</div>
+      <div class="btn-group">
+        <button onclick="toggleDark()">
+          <span class="icon">🌙</span> Toggle dark mode
+        </button>
+        <button class="danger" id="api-error-toggle" onclick="toggleApiError()">
+          <span class="icon">⚠️</span> Simulate API error: OFF
+        </button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="slider-row">
+      <div class="section-label">Panel width</div>
+      <input
+        type="range" min="280" max="420" value="320"
+        oninput="setWidth(this.value)"
+      />
+      <span class="slider-val" id="width-val">320px</span>
+    </div>
+
+    <div class="divider"></div>
+
+    <div>
+      <div class="section-label">Console</div>
+      <div class="log-box" id="log"></div>
+    </div>
+  </div>
+
+  <script>
+    // ════════════════════════════════════════════════════════════════════
+    //  MOCK DATA — edit freely to test different scenarios
+    // ════════════════════════════════════════════════════════════════════
+
+    const MOCK_TOKEN = 'mock-bearer-token-dev-12345';
+
+    const MOCK_INTERACTION = {
+      callAssociatedData: {
+        ani: '+14085551234',
+        email: 'jane.doe@example.com',
+      },
+      callAssociatedDetails: {
+        ani: '+14085551234',
+      },
+    };
+
+    // 7 events across 2 days — varied sources
+    const today = new Date();
+    const yesterday = new Date(today - 86400000);
+
+    function ts(baseDate, hoursAgo, minutesAgo = 0) {
+      const d = new Date(baseDate);
+      d.setHours(d.getHours() - hoursAgo, d.getMinutes() - minutesAgo, 0, 0);
+      return d.toISOString();
+    }
+
+    const MOCK_EVENTS = [
+      // Product view — with image + product link (replace with your real data)
+      {
+        id: 'evt-001',
+        createdAt: ts(today, 0, 3),
+        type: 'web_visit',
+        data: {
+          source: 'demo_website',
+          productName: 'Product Name A',
+          productId: '101',
+          price: '$99.00',
+          category: 'Category',
+          imageUrl: 'https://placehold.co/300x300/e9ecef/6c757d?text=Product+A',
+          productUrl: 'https://example.com/products/101',
+          companyName: 'Example Co',
+          demoId: 'a6731640-dae9-4ed0-8278-1a9d045a1739',
+        },
+      },
+      // Product view — different product, no productUrl (image-only fallback)
+      {
+        id: 'evt-002',
+        createdAt: ts(today, 0, 18),
+        type: 'web_visit',
+        data: {
+          source: 'demo_website',
+          productName: 'Product Name B',
+          productId: '102',
+          price: '$149.00',
+          category: 'Category',
+          imageUrl: 'https://placehold.co/300x300/e9ecef/6c757d?text=Product+B',
+          companyName: 'Example Co',
+          demoId: 'a6731640-dae9-4ed0-8278-1a9d045a1739',
+        },
+      },
+      // Chat — no image
+      {
+        id: 'evt-003',
+        createdAt: ts(today, 1, 5),
+        type: 'chat',
+        data: {
+          source: 'chat',
+          title: 'Live Chat Session',
+          agentName: 'Agent Name',
+          duration: '4m 32s',
+          resolution: 'Escalated to voice',
+          companyName: 'Example Co',
+          demoId: 'a6731640-dae9-4ed0-8278-1a9d045a1739',
+        },
+      },
+      // Product view — no image (text-only card)
+      {
+        id: 'evt-004',
+        createdAt: ts(today, 2, 40),
+        type: 'web_visit',
+        data: {
+          source: 'demo_website',
+          productName: 'Product Name C',
+          productId: '103',
+          price: '$49.00',
+          category: 'Category',
+          companyName: 'Example Co',
+          demoId: 'a6731640-dae9-4ed0-8278-1a9d045a1739',
+        },
+      },
+      {
+        id: 'evt-005',
+        createdAt: ts(yesterday, 2, 0),
+        type: 'voice',
+        data: {
+          source: 'voice',
+          title: 'Inbound Call',
+          ani: '+14085551234',
+          duration: '8m 14s',
+          queueName: 'Support — Tier 1',
+          disposition: 'Resolved',
+          companyName: 'Example Co',
+          demoId: 'a6731640-dae9-4ed0-8278-1a9d045a1739',
+        },
+      },
+      {
+        id: 'evt-006',
+        createdAt: ts(yesterday, 5, 30),
+        type: 'email',
+        data: {
+          source: 'email',
+          title: 'Support Request — Order #8821',
+          subject: 'Re: My recent order',
+          from: 'jane.doe@example.com',
+          status: 'Resolved',
+          companyName: 'Example Co',
+          demoId: 'a6731640-dae9-4ed0-8278-1a9d045a1739',
+        },
+      },
+      {
+        id: 'evt-007',
+        createdAt: ts(yesterday, 9, 15),
+        type: 'unknown_interaction',
+        data: {
+          source: 'partner_portal',
+          title: 'API Integration Check',
+          endpoint: '/api/v2/orders',
+          status_code: '200',
+          companyName: 'Example Co',
+          demoId: 'a6731640-dae9-4ed0-8278-1a9d045a1739',
+        },
+      },
+    ];
+
+    // ════════════════════════════════════════════════════════════════════
+    //  MOCK Desktop SDK
+    // ════════════════════════════════════════════════════════════════════
+
+    let simulateApiError = false;
+
+    const listeners = { accepted: [], ended: [], contactRefreshed: [] };
+
+    window.Desktop = {
+      actions: {
+        fireGeneralActions: async ({ type }) => {
+          log(`SDK: fireGeneralActions(${type})`, 'info');
+          return true;
+        },
+      },
+      authorization: {
+        getToken: async () => {
+          log('SDK: getToken()', 'info');
+          return MOCK_TOKEN;
+        },
+      },
+      agentContact: {
+        addEventListener: (event, cb) => {
+          if (listeners[event]) listeners[event].push(cb);
+        },
+      },
+    };
+
+    // ── Mock CJDS API via fetch intercept ─────────────────────────────
+
+    const _origFetch = window.fetch.bind(window);
+    window.fetch = async (url, opts) => {
+      if (typeof url === 'string' && url.includes('__MOCK__')) {
+        await new Promise(r => setTimeout(r, 600)); // simulate latency
+
+        if (simulateApiError) {
+          log('MOCK API: throwing 500 error', 'err');
+          return new Response(JSON.stringify({ error: 'Internal Server Error' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (url.includes('/identities')) {
+          log('MOCK API: GET /identities → resolved', 'ok');
+          return new Response(JSON.stringify([{ id: 'identity-mock-001' }]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (url.includes('/events')) {
+          log(`MOCK API: GET /events → ${MOCK_EVENTS.length} events`, 'ok');
+          return new Response(JSON.stringify(MOCK_EVENTS), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+      }
+      return _origFetch(url, opts);
+    };
+
+    // ════════════════════════════════════════════════════════════════════
+    //  Harness controls
+    // ════════════════════════════════════════════════════════════════════
+
+    function fire(eventName, detail = {}) {
+      listeners[eventName]?.forEach(cb => cb({ detail }));
+      log(`Fired: ${eventName}`, 'ok');
+    }
+
+    function fireAccepted() {
+      fire('accepted', { interaction: MOCK_INTERACTION });
+    }
+
+    function fireEnded() {
+      fire('ended', {});
+    }
+
+    function fireRefreshed() {
+      fire('contactRefreshed', { interaction: MOCK_INTERACTION });
+    }
+
+    let isDark = false;
+    function toggleDark() {
+      isDark = !isDark;
+      document.body.classList.toggle('dark', isDark);
+      const widget = document.getElementById('widget');
+      if (isDark) widget.setAttribute('dark', '');
+      else widget.removeAttribute('dark');
+      log(`Dark mode: ${isDark ? 'ON' : 'OFF'}`, 'info');
+    }
+
+    function toggleApiError() {
+      simulateApiError = !simulateApiError;
+      const btn = document.getElementById('api-error-toggle');
+      btn.classList.toggle('active', simulateApiError);
+      btn.querySelector('span:last-child') || null;
+      btn.innerHTML = `<span class="icon">⚠️</span> Simulate API error: ${simulateApiError ? 'ON' : 'OFF'}`;
+      log(`API error simulation: ${simulateApiError ? 'ON' : 'OFF'}`, simulateApiError ? 'err' : 'info');
+    }
+
+    function setWidth(val) {
+      document.getElementById('widget-frame').style.width = val + 'px';
+      document.getElementById('width-val').textContent = val + 'px';
+    }
+
+    function log(msg, type = '') {
+      const box = document.getElementById('log');
+      const line = document.createElement('span');
+      line.className = `log-line ${type}`;
+      const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+      line.textContent = `[${time}] ${msg}`;
+      box.appendChild(line);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    log('Dev harness ready — click "Fire: contact accepted" to start', 'info');
+  </script>
+
+  <script src="dist/journey-widget.iife.js"></script>
+</body>
+</html>

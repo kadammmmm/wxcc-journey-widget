@@ -1,0 +1,452 @@
+import { LitElement, html, nothing } from 'lit';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
+import { styles } from './styles.js';
+import { ICONS, getIconForSource } from './icons.js';
+
+/** Render a named SVG icon as actual markup (SVGs are trusted, defined in-package). */
+const icon = (name) => unsafeHTML(ICONS[name] ?? '');
+import { formatRelativeTime, getDateGroupLabel } from './time-utils.js';
+import { resolveIdentity, fetchJourneyEvents, extractCustomerIdentity } from './cjds-client.js';
+
+// ── Noise field configuration ─────────────────────────────────────────────────
+// These fields will be collapsed under a "show more" toggle on each card.
+const SECONDARY_FIELDS = ['demoId', 'companyName'];
+
+// These fields are never rendered in the key/value grid (already rendered elsewhere).
+const SKIP_FIELDS = ['title', 'url', 'timestamp', 'source', 'productName', 'imageUrl', 'productUrl'];
+// ─────────────────────────────────────────────────────────────────────────────
+
+const POLL_INTERVAL_MS = 15000;
+
+const STATE = {
+  IDLE: 'idle',
+  LOADING: 'loading',
+  LOADED: 'loaded',
+  EMPTY: 'empty',
+  ERROR: 'error',
+};
+
+/** Map a source string to a color class name. */
+function colorForSource(source) {
+  if (!source) return 'gray';
+  const s = source.toLowerCase();
+  if (s.includes('web') || s.includes('site') || s.includes('browse')) return 'blue';
+  if (s.includes('chat') || s.includes('message')) return 'teal';
+  if (s.includes('voice') || s.includes('phone') || s.includes('call')) return 'green';
+  if (s.includes('email') || s.includes('mail')) return 'purple';
+  return 'gray';
+}
+
+/** Capitalize words and replace underscores with spaces for field label display. */
+function humanizeKey(key) {
+  return key.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+class JourneyWidget extends LitElement {
+  static properties = {
+    baseUrl: { type: String, attribute: 'base-url' },
+    // internal reactive state
+    _state: { state: true },
+    _events: { state: true },
+    _statusText: { state: true },
+    _polling: { state: true },
+    _interactionEnded: { state: true },
+    _errorMsg: { state: true },
+    _errorCode: { state: true },
+    _expandedCards: { state: true },
+  };
+
+  static styles = styles;
+
+  constructor() {
+    super();
+    this.baseUrl = 'https://api.wxcc-us1.cisco.com';
+    this._state = STATE.IDLE;
+    this._events = [];
+    this._statusText = 'Waiting for interaction';
+    this._polling = false;
+    this._interactionEnded = false;
+    this._errorMsg = null;
+    this._errorCode = null;
+    this._expandedCards = new Set();
+    this._pollTimer = null;
+    this._identityId = null;
+    this._customerIdentity = null;
+    this._sdkReady = false;
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this._initDesktopSDK();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this._stopPolling();
+  }
+
+  async _initDesktopSDK() {
+    const Desktop = window.Desktop;
+    if (!Desktop) {
+      console.warn('[journey-widget] window.Desktop not found — running in standalone mode');
+      return;
+    }
+
+    try {
+      await Desktop.actions.fireGeneralActions({ type: 'IS_STATION_AVAILABLE' });
+      this._sdkReady = true;
+    } catch {
+      // Some SDK versions don't require this; proceed anyway
+      this._sdkReady = true;
+    }
+
+    Desktop.agentContact.addEventListener('accepted', (e) => {
+      const interaction = e.detail?.interaction ?? e.detail ?? e;
+      this._onContactAccepted(interaction);
+    });
+
+    Desktop.agentContact.addEventListener('ended', () => {
+      this._onContactEnded();
+    });
+
+    Desktop.agentContact.addEventListener('contactRefreshed', (e) => {
+      const interaction = e.detail?.interaction ?? e.detail ?? e;
+      this._onContactAccepted(interaction);
+    });
+  }
+
+  async _onContactAccepted(interaction) {
+    this._interactionEnded = false;
+    const identity = extractCustomerIdentity(interaction);
+
+    if (!identity) {
+      this._state = STATE.ERROR;
+      this._errorMsg = 'Could not extract customer identity from interaction.';
+      this._errorCode = 'NO_IDENTITY';
+      return;
+    }
+
+    this._customerIdentity = identity;
+    this._identityId = null;
+    this._events = [];
+    this._expandedCards = new Set();
+    this._state = STATE.LOADING;
+    this._statusText = 'Loading journey…';
+
+    await this._loadJourney();
+    this._startPolling();
+  }
+
+  _onContactEnded() {
+    this._interactionEnded = true;
+    this._polling = false;
+    this._statusText = 'Interaction ended';
+    this._stopPolling();
+  }
+
+  async _loadJourney() {
+    try {
+      const token = await window.Desktop.authorization.getToken();
+
+      if (!this._identityId) {
+        this._identityId = await resolveIdentity(this.baseUrl, token, this._customerIdentity);
+      }
+
+      const events = await fetchJourneyEvents(this.baseUrl, token, this._identityId);
+      this._events = events;
+      this._state = events.length === 0 ? STATE.EMPTY : STATE.LOADED;
+      this._statusText = 'Updated just now';
+      this._polling = true;
+      this._errorMsg = null;
+      this._errorCode = null;
+    } catch (err) {
+      this._state = STATE.ERROR;
+      this._polling = false;
+      this._errorCode = err.code ?? 'API_ERROR';
+      switch (this._errorCode) {
+        case 'AUTH_ERROR':
+          this._errorMsg = 'Authentication failed. The session token may have expired.';
+          break;
+        case 'NOT_FOUND':
+          this._errorMsg = `No journey data found for this customer.`;
+          break;
+        default:
+          this._errorMsg = `Failed to load journey data: ${err.message}`;
+      }
+    }
+  }
+
+  _startPolling() {
+    this._stopPolling();
+    if (this._interactionEnded) return;
+    this._pollTimer = setInterval(() => {
+      if (!this._interactionEnded) this._loadJourney();
+    }, POLL_INTERVAL_MS);
+  }
+
+  _stopPolling() {
+    if (this._pollTimer) {
+      clearInterval(this._pollTimer);
+      this._pollTimer = null;
+    }
+  }
+
+  _retry() {
+    this._state = STATE.LOADING;
+    this._errorMsg = null;
+    this._loadJourney();
+  }
+
+  _toggleCard(id) {
+    const next = new Set(this._expandedCards);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    this._expandedCards = next;
+  }
+
+  // ── Render helpers ─────────────────────────────────────────────────────────
+
+  _renderHeader() {
+    const { _state, _events, _polling, _interactionEnded } = this;
+    const isLoading = _state === STATE.LOADING;
+
+    return html`
+      <div class="header">
+        <div class="header-left">
+          <span class="header-title">Customer Journey</span>
+        </div>
+        <div class="header-right">
+          ${_interactionEnded
+            ? html`<span class="ended-badge">Ended</span>`
+            : nothing}
+          <span class="event-count-badge ${isLoading ? 'loading' : ''}">
+            ${isLoading
+              ? html`<span class="spin" style="display:inline-block;width:10px;height:10px;">${icon('refresh')}</span>`
+              : _events.length}
+          </span>
+        </div>
+      </div>
+      <div class="status-row">
+        <div class="status-dot ${_polling && !_interactionEnded ? 'active' : ''}"></div>
+        <span class="status-text">${this._statusText}</span>
+      </div>
+    `;
+  }
+
+  _renderIdle() {
+    return html`
+      <div class="center-state">
+        <div class="state-icon">${icon('lock')}</div>
+        <p class="state-heading">Waiting for interaction…</p>
+        <p class="state-subtext">Journey events will appear when a contact is accepted.</p>
+      </div>
+    `;
+  }
+
+  _renderLoading() {
+    const skelCard = (w1, w2) => html`
+      <div class="skeleton-card">
+        <div class="skel-row">
+          <div class="skel" style="width:${w1}px;height:14px;"></div>
+          <div class="skel" style="width:50px;height:10px;margin-top:2px;"></div>
+        </div>
+        <div class="skel" style="width:${w2}px;height:12px;margin-bottom:6px;"></div>
+        <div class="skel" style="width:100%;height:10px;margin-bottom:3px;"></div>
+        <div class="skel" style="width:75%;height:10px;"></div>
+      </div>
+    `;
+    return html`
+      <div class="skeleton-wrapper">
+        ${skelCard(80, 160)}
+        ${skelCard(70, 140)}
+        ${skelCard(90, 120)}
+      </div>
+    `;
+  }
+
+  _renderEmpty() {
+    return html`
+      <div class="center-state">
+        <div class="state-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12h18M3 6h18M3 18h18" opacity="0.4"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <p class="state-heading">No journey events yet</p>
+        <p class="state-subtext">Events will appear here as the customer interacts.</p>
+      </div>
+    `;
+  }
+
+  _renderError() {
+    const isApiError = this._errorCode === 'API_ERROR';
+    return html`
+      <div class="error-banner">
+        <div class="error-message">${this._errorMsg}</div>
+        ${isApiError ? html`
+          <button class="retry-btn" @click=${this._retry}>
+            <span style="display:inline-block;width:12px;height:12px;">${icon('refresh')}</span>
+            Retry
+          </button>
+        ` : nothing}
+      </div>
+    `;
+  }
+
+  _renderSourceBadge(source) {
+    const color = colorForSource(source);
+    const iconKey = getIconForSource(source);
+    const label = source ? source.replace(/_/g, ' ') : 'Unknown';
+    return html`
+      <span class="source-badge ${color}">
+        <span style="display:inline-flex;width:11px;height:11px;">${icon(iconKey)}</span>
+        ${label}
+      </span>
+    `;
+  }
+
+  _renderCard(event) {
+    const { id, createdAt, type, data = {} } = event;
+    const source = data.source ?? type ?? '';
+    const color = colorForSource(source);
+    const title = data.productName ?? data.title ?? data.page ?? humanizeKey(type);
+    const isExpanded = this._expandedCards.has(id);
+    const imageUrl = data.imageUrl ?? null;
+    const productUrl = data.productUrl ?? null;
+
+    // Compute primary and secondary visible fields
+    const primaryFields = [];
+    const secondaryFields = [];
+
+    for (const [k, v] of Object.entries(data)) {
+      if (SKIP_FIELDS.includes(k)) continue;
+      if (v === null || v === undefined || v === '') continue;
+      const entry = { k, v: String(v) };
+      if (SECONDARY_FIELDS.includes(k)) secondaryFields.push(entry);
+      else primaryFields.push(entry);
+    }
+
+    const hasSecondary = secondaryFields.length > 0;
+
+    return html`
+      <div class="event-card-wrapper">
+        <div class="rail-dot ${color}"></div>
+        <div class="event-card ${color}">
+          <div class="card-top-row">
+            ${this._renderSourceBadge(source)}
+            <span class="card-timestamp">${formatRelativeTime(createdAt)}</span>
+          </div>
+          <div class="card-body">
+            <div class="card-text-col">
+              <div class="card-title">
+                ${productUrl
+                  ? html`<a class="title-link" href="${productUrl}" target="_blank" rel="noopener noreferrer">${title}</a>`
+                  : title}
+              </div>
+              ${data.url ? html`
+                <a class="card-url" href="${data.url}" target="_blank" rel="noopener noreferrer">
+                  <span style="display:inline-flex;width:11px;height:11px;">${icon('external-link')}</span>
+                  <span class="url-text">${data.url}</span>
+                </a>
+              ` : nothing}
+              ${primaryFields.length ? html`
+                <div class="field-grid">
+                  ${primaryFields.map(({ k, v }) => html`
+                    <span class="field-label ${k === 'price' ? 'price-label' : ''}">${humanizeKey(k)}</span>
+                    <span class="field-value ${k === 'price' ? 'price-value' : ''}">${v}</span>
+                  `)}
+                </div>
+              ` : nothing}
+              ${hasSecondary ? html`
+                <button
+                  class="show-more-btn ${isExpanded ? 'open' : ''}"
+                  @click=${() => this._toggleCard(id)}
+                >
+                  <span style="display:inline-flex;width:12px;height:12px;">${icon('chevron-down')}</span>
+                  ${isExpanded ? 'Show less' : `Show ${secondaryFields.length} more`}
+                </button>
+                ${isExpanded ? html`
+                  <div class="secondary-fields">
+                    <div class="field-grid">
+                      ${secondaryFields.map(({ k, v }) => html`
+                        <span class="field-label">${humanizeKey(k)}</span>
+                        <span class="field-value">${v}</span>
+                      `)}
+                    </div>
+                  </div>
+                ` : nothing}
+              ` : nothing}
+            </div>
+            ${imageUrl ? html`
+              <div class="card-image-col">
+                ${productUrl ? html`
+                  <a href="${productUrl}" target="_blank" rel="noopener noreferrer" class="product-thumb-link">
+                    <img
+                      class="product-thumb"
+                      src="${imageUrl}"
+                      alt="${title}"
+                      loading="lazy"
+                      @error=${(e) => { const col = e.target.closest('.card-image-col'); if (col) col.style.display = 'none'; }}
+                    />
+                  </a>
+                ` : html`
+                  <img
+                    class="product-thumb"
+                    src="${imageUrl}"
+                    alt="${title}"
+                    loading="lazy"
+                    @error=${(e) => { const col = e.target.closest('.card-image-col'); if (col) col.style.display = 'none'; }}
+                  />
+                `}
+              </div>
+            ` : nothing}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  _renderTimeline() {
+    const events = this._events;
+    const items = [];
+    let lastLabel = null;
+
+    for (const event of events) {
+      const label = getDateGroupLabel(event.createdAt);
+      if (label !== lastLabel) {
+        items.push(html`
+          <div class="date-separator">
+            <span class="date-separator-label">${label}</span>
+            <div class="date-separator-line"></div>
+          </div>
+        `);
+        lastLabel = label;
+      }
+      items.push(this._renderCard(event));
+    }
+
+    return html`
+      <div class="timeline-body">
+        <div class="timeline-inner">${items}</div>
+      </div>
+    `;
+  }
+
+  render() {
+    const { _state } = this;
+    return html`
+      <div class="widget">
+        ${this._renderHeader()}
+        ${_state === STATE.IDLE    ? this._renderIdle()    : nothing}
+        ${_state === STATE.LOADING ? this._renderLoading() : nothing}
+        ${_state === STATE.ERROR   ? this._renderError()   : nothing}
+        ${_state === STATE.EMPTY   ? this._renderEmpty()   : nothing}
+        ${_state === STATE.LOADED  ? this._renderTimeline(): nothing}
+      </div>
+    `;
+  }
+}
+
+customElements.define('journey-widget', JourneyWidget);

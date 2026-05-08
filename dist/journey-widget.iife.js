@@ -774,7 +774,11 @@
    * @returns {string|null}
    */
   function extractCustomerIdentity(interaction) {
+    // Top-level ani/email — how the Desktop framework surfaces it via interactionData property
+    // Nested callAssociatedData — SDK event payload shape
     return (
+      interaction?.ani ??
+      interaction?.phoneNumber ??
       interaction?.callAssociatedData?.ani?.value ??
       interaction?.callAssociatedData?.ani ??
       interaction?.callAssociatedData?.email?.value ??
@@ -825,6 +829,8 @@
   class JourneyWidget extends i$1 {
     static properties = {
       baseUrl: { type: String, attribute: 'base-url' },
+      // Injected automatically by the WxCC Desktop framework when a contact is active
+      interactionData: { type: Object },
       // internal reactive state
       _state: { state: true },
       _events: { state: true },
@@ -841,6 +847,7 @@
     constructor() {
       super();
       this.baseUrl = 'https://api.wxcc-us1.cisco.com';
+      this.interactionData = null;
       this._state = STATE.IDLE;
       this._events = [];
       this._statusText = 'Waiting for interaction';
@@ -865,6 +872,24 @@
       this._stopPolling();
     }
 
+    updated(changedProps) {
+      if (!changedProps.has('interactionData')) return;
+      const data = this.interactionData;
+      if (!data) return;
+
+      // isTerminated signals the contact has ended
+      if (data.isTerminated) {
+        this._onContactEnded();
+        return;
+      }
+
+      const state = (data.state ?? '').toLowerCase();
+      // connected = active call/chat; wrapup = post-contact wrap-up (journey still relevant)
+      if (state === 'connected' || state === 'accepted' || state === 'wrapup') {
+        this._onContactAccepted(data);
+      }
+    }
+
     async _initDesktopSDK() {
       const Desktop = window.Desktop;
       if (!Desktop) {
@@ -880,18 +905,23 @@
         this._sdkReady = true;
       }
 
-      Desktop.agentContact.addEventListener('accepted', (e) => {
-        const interaction = e.detail?.interaction ?? e.detail ?? e;
-        this._onContactAccepted(interaction);
-      });
+      // eAgentContact is the canonical Desktop SDK event for all contact state changes
+      Desktop.agentContact.addEventListener('eAgentContact', (e) => {
+        const payload = e.data ?? e.detail?.data ?? e.detail ?? e;
+        const interaction = payload.interaction ?? payload.interactionData ?? payload;
+        if (!interaction) return;
 
-      Desktop.agentContact.addEventListener('ended', () => {
-        this._onContactEnded();
-      });
+        if (payload.isTerminated || interaction.isTerminated) {
+          this._onContactEnded();
+          return;
+        }
 
-      Desktop.agentContact.addEventListener('contactRefreshed', (e) => {
-        const interaction = e.detail?.interaction ?? e.detail ?? e;
-        this._onContactAccepted(interaction);
+        const state = (interaction.state ?? payload.type ?? '').toLowerCase();
+        if (state === 'connected' || state === 'accepted' || state === 'wrapup') {
+          this._onContactAccepted(interaction);
+        } else if (state === 'ended' || state === 'wrapup' && interaction.isTerminated) {
+          this._onContactEnded();
+        }
       });
     }
 

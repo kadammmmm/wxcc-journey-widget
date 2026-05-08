@@ -56,7 +56,11 @@ export async function fetchJourneyEvents(baseUrl, token, identityId, limit = 25)
  * @returns {string|null}
  */
 export function extractCustomerIdentity(interaction) {
+  // Top-level ani/email — how the Desktop framework surfaces it via interactionData property
+  // Nested callAssociatedData — SDK event payload shape
   return (
+    interaction?.ani ??
+    interaction?.phoneNumber ??
     interaction?.callAssociatedData?.ani?.value ??
     interaction?.callAssociatedData?.ani ??
     interaction?.callAssociatedData?.email?.value ??

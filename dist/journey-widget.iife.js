@@ -1261,6 +1261,9 @@
       const { data = {} } = event;
       const timestamp = event.time ?? event.createdAt;
 
+      // Log raw payload once so we can identify the exact wrap-up field name
+      console.log('[cj-timeline] task:ended payload', JSON.stringify(data, null, 2));
+
       // Disposition: try several common field names WxCC uses for wrap-up reason
       const disposition =
         data.wrapUpReason ?? data.wrapupReason ?? data.wrapupCode ??

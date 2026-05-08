@@ -1228,6 +1228,8 @@
     }
   }
 
-  customElements.define('journey-widget', JourneyWidget);
+  if (!customElements.get('cj-timeline-widget')) {
+    customElements.define('cj-timeline-widget', JourneyWidget);
+  }
 
 })();

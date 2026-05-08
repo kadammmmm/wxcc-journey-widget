@@ -48,13 +48,15 @@ Add this JSON to your WxCC Desktop Layout configuration:
 
 ```json
 {
-  "comp": "journey-widget",
+  "comp": "cj-timeline-widget",
   "script": "https://[username].github.io/[repo]/dist/journey-widget.iife.js",
   "properties": {
     "baseUrl": "https://api.wxcc-us1.cisco.com"
   }
 }
 ```
+
+> **Note:** The element name `journey-widget` is already registered by the native Cisco JDS widget. This widget intentionally uses `cj-timeline-widget` to avoid a `CustomElementRegistry` collision.
 
 ## Region configuration
 

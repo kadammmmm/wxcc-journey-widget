@@ -1,12 +1,13 @@
 import { LitElement, html, nothing } from 'lit';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
+import { Desktop } from '@wxcc-desktop/sdk';
 import { styles } from './styles.js';
 import { ICONS, getIconForSource } from './icons.js';
+import { formatRelativeTime, getDateGroupLabel } from './time-utils.js';
+import { resolveIdentity, fetchJourneyEvents, extractCustomerIdentity } from './cjds-client.js';
 
 /** Render a named SVG icon as actual markup (SVGs are trusted, defined in-package). */
 const icon = (name) => unsafeHTML(ICONS[name] ?? '');
-import { formatRelativeTime, getDateGroupLabel } from './time-utils.js';
-import { resolveIdentity, fetchJourneyEvents, extractCustomerIdentity } from './cjds-client.js';
 
 // ── Noise field configuration ─────────────────────────────────────────────────
 // These fields will be collapsed under a "show more" toggle on each card.
@@ -46,8 +47,8 @@ function humanizeKey(key) {
 class JourneyWidget extends LitElement {
   static properties = {
     baseUrl: { type: String, attribute: 'base-url' },
-    // Injected automatically by the WxCC Desktop framework when a contact is active
-    interactionData: { type: Object },
+    // Injected by the WxCC Desktop framework — try both property and attribute forms
+    interactionData: { type: Object, attribute: 'interaction-data' },
     // internal reactive state
     _state: { state: true },
     _events: { state: true },
@@ -107,37 +108,15 @@ class JourneyWidget extends LitElement {
     }
   }
 
-  // Poll until window.Desktop is injected by the WxCC framework (up to ~10 s)
-  _waitForDesktop(timeoutMs = 10000) {
-    if (window.Desktop) return Promise.resolve(window.Desktop);
-    return new Promise(resolve => {
-      const deadline = Date.now() + timeoutMs;
-      const timer = setInterval(() => {
-        if (window.Desktop || Date.now() >= deadline) {
-          clearInterval(timer);
-          resolve(window.Desktop ?? null);
-        }
-      }, 200);
-    });
-  }
-
   async _initDesktopSDK() {
-    const Desktop = await this._waitForDesktop();
-    if (!Desktop) {
-      console.warn('[cj-timeline-widget] window.Desktop unavailable after 10 s — relying on interactionData property');
+    try {
+      await Desktop.config.init();
+      this._sdkReady = true;
+    } catch (err) {
+      console.error('[cj-timeline] Desktop.config.init() failed:', err);
       return;
     }
 
-    try {
-      // config.init() is required before subscribing to events in most SDK versions
-      if (typeof Desktop.config?.init === 'function') {
-        await Desktop.config.init();
-      }
-    } catch { /* already initialized or not required */ }
-
-    this._sdkReady = true;
-
-    // eAgentContact fires for all contact state changes
     Desktop.agentContact.addEventListener('eAgentContact', (e) => {
       const payload = e.data ?? e.detail?.data ?? e.detail ?? e;
       const interaction = payload.interaction ?? payload.interactionData ?? payload;
@@ -188,8 +167,6 @@ class JourneyWidget extends LitElement {
 
   async _loadJourney() {
     try {
-      const Desktop = await this._waitForDesktop();
-      if (!Desktop) throw Object.assign(new Error('Desktop SDK unavailable'), { code: 'AUTH_ERROR' });
       const token = await Desktop.authorization.getToken();
 
       if (!this._identityId) {

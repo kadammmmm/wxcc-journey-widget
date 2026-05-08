@@ -884,6 +884,9 @@
     return v;
   }
 
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const isUuid = (v) => UUID_RE.test(String(v));
+
   class JourneyWidget extends i$1 {
     static properties = {
       baseUrl:        { type: String, attribute: 'base-url' },
@@ -901,7 +904,6 @@
       _errorMsg: { state: true },
       _errorCode: { state: true },
       _expandedCards: { state: true },
-      _debugRaw: { state: true },
     };
 
     static styles = styles;
@@ -921,7 +923,6 @@
       this._errorMsg = null;
       this._errorCode = null;
       this._expandedCards = new Set();
-      this._debugRaw = null;
       this._pollTimer = null;
       this._identityId = null;
       this._customerIdentity = null;
@@ -995,16 +996,15 @@
         }
 
         const raw = await fetchJourneyEvents(this.baseUrl, token, this.workspaceId, this.organizationId, this._customerIdentity);
-        this._debugRaw = {
-          taskEnded: raw.find(e => e.type === 'task:ended') ?? null,
-          agentState: raw.find(e => e.type === 'agent:state_change') ?? null,
-        };
-        // Keep task:ended (completed call records) + all non-task journey events.
-        // Drop intermediate task state events (new/connect/connected/parked/wrapup) — they're noise.
+        // agent:state_change with currentState=wrapup-done = completed call with wrap-up code.
+        // All other task:* events are internal telephony noise — drop them.
         const events = raw
           .filter(evt => {
             const t = (evt.type ?? '').toLowerCase();
-            return !t.startsWith('task:') || t === 'task:ended';
+            if (t === 'agent:state_change') {
+              return (evt.data?.currentState ?? '').toLowerCase() === 'wrapup-done';
+            }
+            return !t.startsWith('task:');
           })
           .slice(0, 25);
         this._events = events;
@@ -1178,6 +1178,7 @@
       for (const [k, v] of Object.entries(data)) {
         if (SKIP_FIELDS.includes(k)) continue;
         if (v === null || v === undefined || v === '') continue;
+        if (isUuid(v)) continue;
         const entry = { k, v: String(v) };
         if (SECONDARY_FIELDS.includes(k)) secondaryFields.push(entry);
         else primaryFields.push(entry);
@@ -1266,19 +1267,10 @@
     _renderCallCard(event) {
       const { data = {} } = event;
       const timestamp = event.time ?? event.createdAt;
-
-      // Log raw payload once so we can identify the exact wrap-up field name
-      console.log('[cj-timeline] task:ended payload', JSON.stringify(data, null, 2));
-
-      // Disposition: try several common field names WxCC uses for wrap-up reason
-      const disposition =
-        data.wrapUpReason ?? data.wrapupReason ?? data.wrapupCode ??
-        data.reason ?? data.disposition ?? 'N/A';
-
-      const agentName = data.agentName ?? data.agentDisplayName ?? null;
-      const queueName = data.queueName ?? data.channelName ?? null;
+      const disposition = data.wrapUpAuxCodeName ?? data.wrapUpReason ?? data.wrapupReason ?? 'N/A';
+      const agentName = data.agentName ?? null;
+      const queueName = data.queueName ?? null;
       const subtitle = [agentName, queueName].filter(Boolean).join(' • ');
-      const direction = (data.direction ?? '').toUpperCase();
 
       return b`
       <div class="event-card-wrapper">
@@ -1291,7 +1283,6 @@
           <div class="call-card-body">
             <div class="call-disposition">${disposition}</div>
             ${subtitle ? b`<div class="call-subtitle">${subtitle}</div>` : A}
-            ${direction ? b`<div class="call-direction">${direction}</div>` : A}
           </div>
         </div>
       </div>
@@ -1314,7 +1305,7 @@
         `);
           lastLabel = label;
         }
-        const isCall = (event.type ?? '').toLowerCase().startsWith('task:');
+        const isCall = (event.type ?? '') === 'agent:state_change';
         items.push(isCall ? this._renderCallCard(event) : this._renderCard(event));
       }
 
@@ -1326,19 +1317,10 @@
     }
 
     render() {
-      const { _state, _debugRaw } = this;
+      const { _state } = this;
       return b`
       <div class="widget">
         ${this._renderHeader()}
-        ${_debugRaw ? b`
-          <div style="margin:8px;padding:8px;background:#fffbe6;border:1px solid #f0c040;border-radius:6px;font-size:11px;font-family:monospace;white-space:pre-wrap;overflow-x:auto;color:#333;">
-<b>task:ended:</b>
-${JSON.stringify(_debugRaw.taskEnded, null, 2)}
-
-<b>agent:state_change:</b>
-${JSON.stringify(_debugRaw.agentState, null, 2)}
-          </div>
-        ` : A}
         ${_state === STATE.IDLE    ? this._renderIdle()    : A}
         ${_state === STATE.LOADING ? this._renderLoading() : A}
         ${_state === STATE.ERROR   ? this._renderError()   : A}

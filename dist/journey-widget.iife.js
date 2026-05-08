@@ -61,6 +61,7 @@
     --cj-accent-green: #198754;
     --cj-accent-purple: #6f42c1;
     --cj-accent-gray: #adb5bd;
+    --cj-accent-amber: #d97706;
     --cj-rail-color: #dee2e6;
     --cj-skeleton: #e9ecef;
     --cj-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
@@ -295,6 +296,7 @@
   .rail-dot.green  { background: var(--cj-accent-green); }
   .rail-dot.purple { background: var(--cj-accent-purple); }
   .rail-dot.gray   { background: var(--cj-accent-gray); }
+  .rail-dot.amber  { background: var(--cj-accent-amber); }
 
   .event-card {
     background: var(--cj-card-bg);
@@ -317,6 +319,7 @@
   .event-card.green  { border-left-color: var(--cj-accent-green); }
   .event-card.purple { border-left-color: var(--cj-accent-purple); }
   .event-card.gray   { border-left-color: var(--cj-accent-gray); }
+  .event-card.amber  { border-left-color: var(--cj-accent-amber); }
 
   .card-top-row {
     display: flex;
@@ -351,6 +354,7 @@
   .source-badge.green  { background: color-mix(in srgb, var(--cj-accent-green) 12%, transparent); color: var(--cj-accent-green); }
   .source-badge.purple { background: color-mix(in srgb, var(--cj-accent-purple) 12%, transparent); color: var(--cj-accent-purple); }
   .source-badge.gray   { background: color-mix(in srgb, var(--cj-accent-gray) 12%, transparent); color: var(--cj-text-muted); }
+  .source-badge.amber  { background: color-mix(in srgb, var(--cj-accent-amber) 12%, transparent); color: var(--cj-accent-amber); }
 
   .card-timestamp {
     font-size: 10px;
@@ -512,6 +516,91 @@
   @keyframes fadeIn {
     from { opacity: 0; }
     to   { opacity: 1; }
+  }
+
+  /* ── Journey summary strip ──────────────────────── */
+
+  .summary-strip {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid var(--cj-border);
+    flex-shrink: 0;
+    background: var(--cj-card-bg);
+  }
+
+  .summary-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    padding: 9px 6px;
+    gap: 3px;
+    border-right: 1px solid var(--cj-border);
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .summary-stat:last-child { border-right: none; }
+
+  .summary-stat-icon {
+    display: flex;
+    width: 13px;
+    height: 13px;
+    color: var(--cj-text-muted);
+    flex-shrink: 0;
+  }
+
+  .summary-stat-value {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--cj-text-primary);
+    line-height: 1;
+  }
+
+  .summary-stat-label {
+    font-size: 9px;
+    color: var(--cj-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+
+  .summary-stat--intent .summary-stat-value,
+  .summary-stat--intent .summary-stat-icon { color: var(--cj-accent-amber); }
+
+  .summary-wrapup-pill {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--cj-accent-green) 15%, transparent);
+    color: var(--cj-accent-green);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  /* ── High-intent (add_to_cart) card ─────────────── */
+
+  .event-card.high-intent {
+    background: color-mix(in srgb, var(--cj-accent-amber) 5%, var(--cj-card-bg));
+  }
+
+  .intent-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--cj-accent-amber);
+    background: color-mix(in srgb, var(--cj-accent-amber) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--cj-accent-amber) 30%, transparent);
+    padding: 2px 6px;
+    border-radius: 4px;
   }
 
   /* ── Call history card ──────────────────────────────── */
@@ -690,6 +779,10 @@
     lock: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
 
     refresh: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
+
+    cart: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>`,
+
+    eye: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
   };
 
   /**
@@ -1165,7 +1258,8 @@
       // CloudEvents use `time`; legacy CJDS used `createdAt`
       const timestamp = event.time ?? event.createdAt;
       const source = data.source ?? type ?? '';
-      const color = colorForSource(source);
+      const isHighIntent = type === 'add_to_cart';
+      const color = isHighIntent ? 'amber' : colorForSource(source);
       const title = data.productName ?? data.title ?? data.page ?? humanizeKey(type);
       const isExpanded = this._expandedCards.has(id);
       const imageUrl = data.imageUrl ?? null;
@@ -1189,9 +1283,11 @@
       return b`
       <div class="event-card-wrapper">
         <div class="rail-dot ${color}"></div>
-        <div class="event-card ${color}">
+        <div class="event-card ${color} ${isHighIntent ? 'high-intent' : ''}">
           <div class="card-top-row">
-            ${this._renderSourceBadge(source)}
+            ${isHighIntent
+              ? b`<span class="intent-badge"><span style="display:inline-flex;width:10px;height:10px;">${icon('cart')}</span> Added to Cart</span>`
+              : this._renderSourceBadge(source)}
             <span class="card-timestamp">${formatRelativeTime(timestamp)}</span>
           </div>
           <div class="card-body">
@@ -1264,6 +1360,40 @@
     `;
     }
 
+    _renderSummaryStrip() {
+      const evts = this._events;
+      const calls = evts.filter(e => e.type === 'agent:state_change');
+      const lastWrapUp = calls[0]?.data?.wrapUpAuxCodeName ?? null;
+      const webCount = evts.filter(e => ['page_view', 'product_view', 'product_click'].includes(e.type)).length;
+      const cartCount = evts.filter(e => e.type === 'add_to_cart').length;
+
+      return b`
+      <div class="summary-strip">
+        <div class="summary-stat">
+          <span class="summary-stat-icon">${icon('phone')}</span>
+          <span class="summary-stat-value">${calls.length}</span>
+          <span class="summary-stat-label">Calls</span>
+        </div>
+        <div class="summary-stat">
+          ${lastWrapUp
+            ? b`<span class="summary-wrapup-pill">${lastWrapUp}</span>`
+            : b`<span class="summary-stat-value" style="font-size:12px;color:var(--cj-text-muted)">—</span>`}
+          <span class="summary-stat-label">Last Outcome</span>
+        </div>
+        <div class="summary-stat">
+          <span class="summary-stat-icon">${icon('eye')}</span>
+          <span class="summary-stat-value">${webCount}</span>
+          <span class="summary-stat-label">Web Events</span>
+        </div>
+        <div class="summary-stat ${cartCount > 0 ? 'summary-stat--intent' : ''}">
+          <span class="summary-stat-icon">${icon('cart')}</span>
+          <span class="summary-stat-value">${cartCount}</span>
+          <span class="summary-stat-label">In Cart</span>
+        </div>
+      </div>
+    `;
+    }
+
     _renderCallCard(event) {
       const { data = {} } = event;
       const timestamp = event.time ?? event.createdAt;
@@ -1321,6 +1451,7 @@
       return b`
       <div class="widget">
         ${this._renderHeader()}
+        ${_state === STATE.LOADED  ? this._renderSummaryStrip() : A}
         ${_state === STATE.IDLE    ? this._renderIdle()    : A}
         ${_state === STATE.LOADING ? this._renderLoading() : A}
         ${_state === STATE.ERROR   ? this._renderError()   : A}

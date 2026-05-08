@@ -334,7 +334,8 @@ class JourneyWidget extends LitElement {
     // CloudEvents use `time`; legacy CJDS used `createdAt`
     const timestamp = event.time ?? event.createdAt;
     const source = data.source ?? type ?? '';
-    const color = colorForSource(source);
+    const isHighIntent = type === 'add_to_cart';
+    const color = isHighIntent ? 'amber' : colorForSource(source);
     const title = data.productName ?? data.title ?? data.page ?? humanizeKey(type);
     const isExpanded = this._expandedCards.has(id);
     const imageUrl = data.imageUrl ?? null;
@@ -358,9 +359,11 @@ class JourneyWidget extends LitElement {
     return html`
       <div class="event-card-wrapper">
         <div class="rail-dot ${color}"></div>
-        <div class="event-card ${color}">
+        <div class="event-card ${color} ${isHighIntent ? 'high-intent' : ''}">
           <div class="card-top-row">
-            ${this._renderSourceBadge(source)}
+            ${isHighIntent
+              ? html`<span class="intent-badge"><span style="display:inline-flex;width:10px;height:10px;">${icon('cart')}</span> Added to Cart</span>`
+              : this._renderSourceBadge(source)}
             <span class="card-timestamp">${formatRelativeTime(timestamp)}</span>
           </div>
           <div class="card-body">
@@ -433,6 +436,40 @@ class JourneyWidget extends LitElement {
     `;
   }
 
+  _renderSummaryStrip() {
+    const evts = this._events;
+    const calls = evts.filter(e => e.type === 'agent:state_change');
+    const lastWrapUp = calls[0]?.data?.wrapUpAuxCodeName ?? null;
+    const webCount = evts.filter(e => ['page_view', 'product_view', 'product_click'].includes(e.type)).length;
+    const cartCount = evts.filter(e => e.type === 'add_to_cart').length;
+
+    return html`
+      <div class="summary-strip">
+        <div class="summary-stat">
+          <span class="summary-stat-icon">${icon('phone')}</span>
+          <span class="summary-stat-value">${calls.length}</span>
+          <span class="summary-stat-label">Calls</span>
+        </div>
+        <div class="summary-stat">
+          ${lastWrapUp
+            ? html`<span class="summary-wrapup-pill">${lastWrapUp}</span>`
+            : html`<span class="summary-stat-value" style="font-size:12px;color:var(--cj-text-muted)">—</span>`}
+          <span class="summary-stat-label">Last Outcome</span>
+        </div>
+        <div class="summary-stat">
+          <span class="summary-stat-icon">${icon('eye')}</span>
+          <span class="summary-stat-value">${webCount}</span>
+          <span class="summary-stat-label">Web Events</span>
+        </div>
+        <div class="summary-stat ${cartCount > 0 ? 'summary-stat--intent' : ''}">
+          <span class="summary-stat-icon">${icon('cart')}</span>
+          <span class="summary-stat-value">${cartCount}</span>
+          <span class="summary-stat-label">In Cart</span>
+        </div>
+      </div>
+    `;
+  }
+
   _renderCallCard(event) {
     const { data = {} } = event;
     const timestamp = event.time ?? event.createdAt;
@@ -490,6 +527,7 @@ class JourneyWidget extends LitElement {
     return html`
       <div class="widget">
         ${this._renderHeader()}
+        ${_state === STATE.LOADED  ? this._renderSummaryStrip() : nothing}
         ${_state === STATE.IDLE    ? this._renderIdle()    : nothing}
         ${_state === STATE.LOADING ? this._renderLoading() : nothing}
         ${_state === STATE.ERROR   ? this._renderError()   : nothing}

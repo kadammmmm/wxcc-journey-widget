@@ -21,6 +21,7 @@ export const styles = css`
     --cj-accent-green: #198754;
     --cj-accent-purple: #6f42c1;
     --cj-accent-gray: #adb5bd;
+    --cj-accent-amber: #d97706;
     --cj-rail-color: #dee2e6;
     --cj-skeleton: #e9ecef;
     --cj-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
@@ -255,6 +256,7 @@ export const styles = css`
   .rail-dot.green  { background: var(--cj-accent-green); }
   .rail-dot.purple { background: var(--cj-accent-purple); }
   .rail-dot.gray   { background: var(--cj-accent-gray); }
+  .rail-dot.amber  { background: var(--cj-accent-amber); }
 
   .event-card {
     background: var(--cj-card-bg);
@@ -277,6 +279,7 @@ export const styles = css`
   .event-card.green  { border-left-color: var(--cj-accent-green); }
   .event-card.purple { border-left-color: var(--cj-accent-purple); }
   .event-card.gray   { border-left-color: var(--cj-accent-gray); }
+  .event-card.amber  { border-left-color: var(--cj-accent-amber); }
 
   .card-top-row {
     display: flex;
@@ -311,6 +314,7 @@ export const styles = css`
   .source-badge.green  { background: color-mix(in srgb, var(--cj-accent-green) 12%, transparent); color: var(--cj-accent-green); }
   .source-badge.purple { background: color-mix(in srgb, var(--cj-accent-purple) 12%, transparent); color: var(--cj-accent-purple); }
   .source-badge.gray   { background: color-mix(in srgb, var(--cj-accent-gray) 12%, transparent); color: var(--cj-text-muted); }
+  .source-badge.amber  { background: color-mix(in srgb, var(--cj-accent-amber) 12%, transparent); color: var(--cj-accent-amber); }
 
   .card-timestamp {
     font-size: 10px;
@@ -472,6 +476,91 @@ export const styles = css`
   @keyframes fadeIn {
     from { opacity: 0; }
     to   { opacity: 1; }
+  }
+
+  /* ── Journey summary strip ──────────────────────── */
+
+  .summary-strip {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid var(--cj-border);
+    flex-shrink: 0;
+    background: var(--cj-card-bg);
+  }
+
+  .summary-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    padding: 9px 6px;
+    gap: 3px;
+    border-right: 1px solid var(--cj-border);
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .summary-stat:last-child { border-right: none; }
+
+  .summary-stat-icon {
+    display: flex;
+    width: 13px;
+    height: 13px;
+    color: var(--cj-text-muted);
+    flex-shrink: 0;
+  }
+
+  .summary-stat-value {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--cj-text-primary);
+    line-height: 1;
+  }
+
+  .summary-stat-label {
+    font-size: 9px;
+    color: var(--cj-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+
+  .summary-stat--intent .summary-stat-value,
+  .summary-stat--intent .summary-stat-icon { color: var(--cj-accent-amber); }
+
+  .summary-wrapup-pill {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--cj-accent-green) 15%, transparent);
+    color: var(--cj-accent-green);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  /* ── High-intent (add_to_cart) card ─────────────── */
+
+  .event-card.high-intent {
+    background: color-mix(in srgb, var(--cj-accent-amber) 5%, var(--cj-card-bg));
+  }
+
+  .intent-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--cj-accent-amber);
+    background: color-mix(in srgb, var(--cj-accent-amber) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--cj-accent-amber) 30%, transparent);
+    padding: 2px 6px;
+    border-radius: 4px;
   }
 
   /* ── Call history card ──────────────────────────────── */

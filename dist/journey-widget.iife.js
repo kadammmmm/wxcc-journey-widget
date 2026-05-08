@@ -993,6 +993,8 @@
         }
 
         const raw = await fetchJourneyEvents(this.baseUrl, token, this.workspaceId, this.organizationId, this._customerIdentity);
+        console.log('[cj-timeline] raw event types:', [...new Set(raw.map(e => e.type))]);
+        console.log('[cj-timeline] first 3 raw events:', JSON.stringify(raw.slice(0, 3), null, 2));
         // Keep task:ended (completed call records) + all non-task journey events.
         // Drop intermediate task state events (new/connect/connected/parked/wrapup) — they're noise.
         const events = raw

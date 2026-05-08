@@ -735,65 +735,82 @@
   }
 
   /**
-   * Resolve a customer identity string (ANI, email, etc.) to a CJDS identityId.
-   * @param {string} baseUrl
-   * @param {string} token
-   * @param {string} alias - phone number or email
+   * Resolve a customer alias (ANI, email) to a CJDS person identityId.
+   * Uses the JDS admin alias-search endpoint (POST, workspace-scoped).
+   *
+   * @param {string} baseUrl   e.g. https://api-jds.wxdap-produs1.webex.com
+   * @param {string} token     Bearer token
+   * @param {string} workspaceId
+   * @param {string} alias     phone number or email
    * @returns {Promise<string>} identityId
    */
-  async function resolveIdentity(baseUrl, token, alias) {
-    const url = `${baseUrl}/customer-journey/v1/identities?aliases=${encodeURIComponent(alias)}`;
+  async function resolveIdentity(baseUrl, token, workspaceId, alias) {
+    const url = `${baseUrl}/admin/v1/api/person/workspace-id/${workspaceId}/aliases/search`;
     const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ aliases: [alias] }),
     });
 
     if (res.status === 401) throw Object.assign(new Error('Unauthorized'), { code: 'AUTH_ERROR' });
     if (res.status === 404) throw Object.assign(new Error('Identity not found'), { code: 'NOT_FOUND' });
     if (!res.ok) throw Object.assign(new Error(`API error ${res.status}`), { code: 'API_ERROR' });
 
-    const data = await res.json();
-
-    // Response is an array of identity objects; grab the first id
-    const identities = Array.isArray(data) ? data : data.identities ?? [];
+    const body = await res.json();
+    const identities = body.data ?? [];
     if (!identities.length) throw Object.assign(new Error('Identity not found'), { code: 'NOT_FOUND' });
 
     return identities[0].id ?? identities[0].identityId;
   }
 
   /**
-   * Fetch the most recent journey events for a given identityId.
+   * Fetch recent journey events for a given identityId.
+   * Uses the JDS events endpoint (POST, workspace-scoped, CloudEvents response).
+   *
    * @param {string} baseUrl
    * @param {string} token
+   * @param {string} workspaceId
    * @param {string} identityId
-   * @param {number} [limit=25]
+   * @param {number} [limit=20]
    * @returns {Promise<Array>} events sorted newest-first
    */
-  async function fetchJourneyEvents(baseUrl, token, identityId, limit = 25) {
-    const url = `${baseUrl}/customer-journey/v1/journey/${encodeURIComponent(identityId)}/events?limit=${limit}`;
+  async function fetchJourneyEvents(baseUrl, token, workspaceId, identityId, limit = 20) {
+    const url = `${baseUrl}/v1/api/events/workspace-id/${workspaceId}/identity?page=1&pageSize=${limit}`;
     const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ identityId }),
     });
 
     if (res.status === 401) throw Object.assign(new Error('Unauthorized'), { code: 'AUTH_ERROR' });
     if (res.status === 404) throw Object.assign(new Error('Identity not found'), { code: 'NOT_FOUND' });
     if (!res.ok) throw Object.assign(new Error(`API error ${res.status}`), { code: 'API_ERROR' });
 
-    const data = await res.json();
-    const events = Array.isArray(data) ? data : data.events ?? [];
+    const body = await res.json();
+    const events = Array.isArray(body.data) ? body.data : [];
 
-    // Guarantee newest-first order
-    return events.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    // Sort newest-first; events use CloudEvents `time` field
+    return events.slice().sort((a, b) => {
+      const ta = new Date(a.time ?? a.createdAt ?? 0);
+      const tb = new Date(b.time ?? b.createdAt ?? 0);
+      return tb - ta;
+    });
   }
 
   /**
    * Extract the customer identity from an interaction payload.
-   * Priority: callAssociatedData.ani > callAssociatedData.email > callAssociatedDetails.ani
+   * Handles both Desktop-framework-injected interactionData and SDK event payloads.
+   *
    * @param {object} interaction
    * @returns {string|null}
    */
   function extractCustomerIdentity(interaction) {
-    // Top-level ani/email — how the Desktop framework surfaces it via interactionData property
-    // Nested callAssociatedData — SDK event payload shape
     return (
       interaction?.ani ??
       interaction?.phoneNumber ??
@@ -827,13 +844,14 @@
     ERROR: 'error',
   };
 
-  /** Map a source string to a color class name. */
+  /** Map a source/type string to a color class name. Handles both free-form strings
+   *  and CloudEvent type patterns like "page:view" or "task:new". */
   function colorForSource(source) {
     if (!source) return 'gray';
     const s = source.toLowerCase();
-    if (s.includes('web') || s.includes('site') || s.includes('browse')) return 'blue';
+    if (s.includes('page') || s.includes('web') || s.includes('site') || s.includes('browse')) return 'blue';
     if (s.includes('chat') || s.includes('message')) return 'teal';
-    if (s.includes('voice') || s.includes('phone') || s.includes('call')) return 'green';
+    if (s.includes('voice') || s.includes('phone') || s.includes('call') || s.includes('task') || s.includes('telephon')) return 'green';
     if (s.includes('email') || s.includes('mail')) return 'purple';
     return 'gray';
   }
@@ -847,6 +865,7 @@
   class JourneyWidget extends i$1 {
     static properties = {
       baseUrl: { type: String, attribute: 'base-url' },
+      workspaceId: { type: String, attribute: 'workspace-id' },
       // Injected by the WxCC Desktop framework — try both property and attribute forms
       interactionData: { type: Object, attribute: 'interaction-data' },
       // internal reactive state
@@ -864,7 +883,8 @@
 
     constructor() {
       super();
-      this.baseUrl = 'https://api.wxcc-us1.cisco.com';
+      this.baseUrl = 'https://api-jds.wxdap-produs1.webex.com';
+      this.workspaceId = '';
       this.interactionData = null;
       this._state = STATE.IDLE;
       this._events = [];
@@ -967,13 +987,15 @@
 
     async _loadJourney() {
       try {
+        if (!this.workspaceId) throw Object.assign(new Error('workspace-id property is not configured'), { code: 'API_ERROR' });
+
         const token = await distExports.Desktop.authorization.getToken();
 
         if (!this._identityId) {
-          this._identityId = await resolveIdentity(this.baseUrl, token, this._customerIdentity);
+          this._identityId = await resolveIdentity(this.baseUrl, token, this.workspaceId, this._customerIdentity);
         }
 
-        const events = await fetchJourneyEvents(this.baseUrl, token, this._identityId);
+        const events = await fetchJourneyEvents(this.baseUrl, token, this.workspaceId, this._identityId);
         this._events = events;
         this._state = events.length === 0 ? STATE.EMPTY : STATE.LOADED;
         this._statusText = 'Updated just now';
@@ -1128,7 +1150,9 @@
     }
 
     _renderCard(event) {
-      const { id, createdAt, type, data = {} } = event;
+      const { id, type, data = {} } = event;
+      // CloudEvents use `time`; legacy CJDS used `createdAt`
+      const timestamp = event.time ?? event.createdAt;
       const source = data.source ?? type ?? '';
       const color = colorForSource(source);
       const title = data.productName ?? data.title ?? data.page ?? humanizeKey(type);
@@ -1156,7 +1180,7 @@
         <div class="event-card ${color}">
           <div class="card-top-row">
             ${this._renderSourceBadge(source)}
-            <span class="card-timestamp">${formatRelativeTime(createdAt)}</span>
+            <span class="card-timestamp">${formatRelativeTime(timestamp)}</span>
           </div>
           <div class="card-body">
             <div class="card-text-col">
@@ -1234,7 +1258,7 @@
       let lastLabel = null;
 
       for (const event of events) {
-        const label = getDateGroupLabel(event.createdAt);
+        const label = getDateGroupLabel(event.time ?? event.createdAt);
         if (label !== lastLabel) {
           items.push(b`
           <div class="date-separator">

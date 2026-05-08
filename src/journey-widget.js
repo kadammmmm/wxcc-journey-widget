@@ -27,13 +27,14 @@ const STATE = {
   ERROR: 'error',
 };
 
-/** Map a source string to a color class name. */
+/** Map a source/type string to a color class name. Handles both free-form strings
+ *  and CloudEvent type patterns like "page:view" or "task:new". */
 function colorForSource(source) {
   if (!source) return 'gray';
   const s = source.toLowerCase();
-  if (s.includes('web') || s.includes('site') || s.includes('browse')) return 'blue';
+  if (s.includes('page') || s.includes('web') || s.includes('site') || s.includes('browse')) return 'blue';
   if (s.includes('chat') || s.includes('message')) return 'teal';
-  if (s.includes('voice') || s.includes('phone') || s.includes('call')) return 'green';
+  if (s.includes('voice') || s.includes('phone') || s.includes('call') || s.includes('task') || s.includes('telephon')) return 'green';
   if (s.includes('email') || s.includes('mail')) return 'purple';
   return 'gray';
 }
@@ -47,6 +48,7 @@ function humanizeKey(key) {
 class JourneyWidget extends LitElement {
   static properties = {
     baseUrl: { type: String, attribute: 'base-url' },
+    workspaceId: { type: String, attribute: 'workspace-id' },
     // Injected by the WxCC Desktop framework — try both property and attribute forms
     interactionData: { type: Object, attribute: 'interaction-data' },
     // internal reactive state
@@ -64,7 +66,8 @@ class JourneyWidget extends LitElement {
 
   constructor() {
     super();
-    this.baseUrl = 'https://api.wxcc-us1.cisco.com';
+    this.baseUrl = 'https://api-jds.wxdap-produs1.webex.com';
+    this.workspaceId = '';
     this.interactionData = null;
     this._state = STATE.IDLE;
     this._events = [];
@@ -167,13 +170,15 @@ class JourneyWidget extends LitElement {
 
   async _loadJourney() {
     try {
+      if (!this.workspaceId) throw Object.assign(new Error('workspace-id property is not configured'), { code: 'API_ERROR' });
+
       const token = await Desktop.authorization.getToken();
 
       if (!this._identityId) {
-        this._identityId = await resolveIdentity(this.baseUrl, token, this._customerIdentity);
+        this._identityId = await resolveIdentity(this.baseUrl, token, this.workspaceId, this._customerIdentity);
       }
 
-      const events = await fetchJourneyEvents(this.baseUrl, token, this._identityId);
+      const events = await fetchJourneyEvents(this.baseUrl, token, this.workspaceId, this._identityId);
       this._events = events;
       this._state = events.length === 0 ? STATE.EMPTY : STATE.LOADED;
       this._statusText = 'Updated just now';
@@ -328,7 +333,9 @@ class JourneyWidget extends LitElement {
   }
 
   _renderCard(event) {
-    const { id, createdAt, type, data = {} } = event;
+    const { id, type, data = {} } = event;
+    // CloudEvents use `time`; legacy CJDS used `createdAt`
+    const timestamp = event.time ?? event.createdAt;
     const source = data.source ?? type ?? '';
     const color = colorForSource(source);
     const title = data.productName ?? data.title ?? data.page ?? humanizeKey(type);
@@ -356,7 +363,7 @@ class JourneyWidget extends LitElement {
         <div class="event-card ${color}">
           <div class="card-top-row">
             ${this._renderSourceBadge(source)}
-            <span class="card-timestamp">${formatRelativeTime(createdAt)}</span>
+            <span class="card-timestamp">${formatRelativeTime(timestamp)}</span>
           </div>
           <div class="card-body">
             <div class="card-text-col">
@@ -434,7 +441,7 @@ class JourneyWidget extends LitElement {
     let lastLabel = null;
 
     for (const event of events) {
-      const label = getDateGroupLabel(event.createdAt);
+      const label = getDateGroupLabel(event.time ?? event.createdAt);
       if (label !== lastLabel) {
         items.push(html`
           <div class="date-separator">

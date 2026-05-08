@@ -996,8 +996,8 @@
 
         const raw = await fetchJourneyEvents(this.baseUrl, token, this.workspaceId, this.organizationId, this._customerIdentity);
         this._debugRaw = {
-          types: [...new Set(raw.map(e => e.type))],
-          first: raw[0] ?? null,
+          taskEnded: raw.find(e => e.type === 'task:ended') ?? null,
+          agentState: raw.find(e => e.type === 'agent:state_change') ?? null,
         };
         // Keep task:ended (completed call records) + all non-task journey events.
         // Drop intermediate task state events (new/connect/connected/parked/wrapup) — they're noise.
@@ -1332,11 +1332,11 @@
         ${this._renderHeader()}
         ${_debugRaw ? b`
           <div style="margin:8px;padding:8px;background:#fffbe6;border:1px solid #f0c040;border-radius:6px;font-size:11px;font-family:monospace;white-space:pre-wrap;overflow-x:auto;color:#333;">
-<b>DEBUG — event types (${_debugRaw.types.length}):</b>
-${_debugRaw.types.join('\n')}
+<b>task:ended:</b>
+${JSON.stringify(_debugRaw.taskEnded, null, 2)}
 
-<b>First event:</b>
-${JSON.stringify(_debugRaw.first, null, 2)}
+<b>agent:state_change:</b>
+${JSON.stringify(_debugRaw.agentState, null, 2)}
           </div>
         ` : A}
         ${_state === STATE.IDLE    ? this._renderIdle()    : A}

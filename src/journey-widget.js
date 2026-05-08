@@ -162,9 +162,13 @@ class JourneyWidget extends LitElement {
       }
 
       const raw = await fetchJourneyEvents(this.baseUrl, token, this.workspaceId, this.organizationId, this._customerIdentity);
-      // Strip internal WxCC telephony task events — agents don't need to see these
+      // Keep task:ended (completed call records) + all non-task journey events.
+      // Drop intermediate task state events (new/connect/connected/parked/wrapup) — they're noise.
       const events = raw
-        .filter(evt => !(evt.type ?? '').toLowerCase().startsWith('task:'))
+        .filter(evt => {
+          const t = (evt.type ?? '').toLowerCase();
+          return !t.startsWith('task:') || t === 'task:ended';
+        })
         .slice(0, 25);
       this._events = events;
       this._state = events.length === 0 ? STATE.EMPTY : STATE.LOADED;
@@ -422,6 +426,38 @@ class JourneyWidget extends LitElement {
     `;
   }
 
+  _renderCallCard(event) {
+    const { data = {} } = event;
+    const timestamp = event.time ?? event.createdAt;
+
+    // Disposition: try several common field names WxCC uses for wrap-up reason
+    const disposition =
+      data.wrapUpReason ?? data.wrapupReason ?? data.wrapupCode ??
+      data.reason ?? data.disposition ?? 'N/A';
+
+    const agentName = data.agentName ?? data.agentDisplayName ?? null;
+    const queueName = data.queueName ?? data.channelName ?? null;
+    const subtitle = [agentName, queueName].filter(Boolean).join(' • ');
+    const direction = (data.direction ?? '').toUpperCase();
+
+    return html`
+      <div class="event-card-wrapper">
+        <div class="rail-dot green"></div>
+        <div class="event-card call-card green">
+          <div class="card-top-row">
+            ${this._renderSourceBadge('telephony')}
+            <span class="card-timestamp">${formatRelativeTime(timestamp)}</span>
+          </div>
+          <div class="call-card-body">
+            <div class="call-disposition">${disposition}</div>
+            ${subtitle ? html`<div class="call-subtitle">${subtitle}</div>` : nothing}
+            ${direction ? html`<div class="call-direction">${direction}</div>` : nothing}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   _renderTimeline() {
     const events = this._events;
     const items = [];
@@ -438,7 +474,8 @@ class JourneyWidget extends LitElement {
         `);
         lastLabel = label;
       }
-      items.push(this._renderCard(event));
+      const isCall = (event.type ?? '').toLowerCase().startsWith('task:');
+      items.push(isCall ? this._renderCallCard(event) : this._renderCard(event));
     }
 
     return html`

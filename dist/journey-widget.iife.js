@@ -514,6 +514,36 @@
     to   { opacity: 1; }
   }
 
+  /* ── Call history card ──────────────────────────────── */
+
+  .call-card-body {
+    margin-top: 3px;
+  }
+
+  .call-disposition {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--cj-text-primary);
+  }
+
+  .call-subtitle {
+    font-size: 11px;
+    color: var(--cj-text-muted);
+    margin-top: 2px;
+  }
+
+  .call-direction {
+    display: inline-block;
+    margin-top: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--cj-text-muted);
+    background: color-mix(in srgb, var(--cj-accent-gray) 15%, transparent);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+
   /* ── Skeleton ──────────────────────────────────────────── */
 
   .skeleton-wrapper {
@@ -963,9 +993,13 @@
         }
 
         const raw = await fetchJourneyEvents(this.baseUrl, token, this.workspaceId, this.organizationId, this._customerIdentity);
-        // Strip internal WxCC telephony task events — agents don't need to see these
+        // Keep task:ended (completed call records) + all non-task journey events.
+        // Drop intermediate task state events (new/connect/connected/parked/wrapup) — they're noise.
         const events = raw
-          .filter(evt => !(evt.type ?? '').toLowerCase().startsWith('task:'))
+          .filter(evt => {
+            const t = (evt.type ?? '').toLowerCase();
+            return !t.startsWith('task:') || t === 'task:ended';
+          })
           .slice(0, 25);
         this._events = events;
         this._state = events.length === 0 ? STATE.EMPTY : STATE.LOADED;
@@ -1223,6 +1257,38 @@
     `;
     }
 
+    _renderCallCard(event) {
+      const { data = {} } = event;
+      const timestamp = event.time ?? event.createdAt;
+
+      // Disposition: try several common field names WxCC uses for wrap-up reason
+      const disposition =
+        data.wrapUpReason ?? data.wrapupReason ?? data.wrapupCode ??
+        data.reason ?? data.disposition ?? 'N/A';
+
+      const agentName = data.agentName ?? data.agentDisplayName ?? null;
+      const queueName = data.queueName ?? data.channelName ?? null;
+      const subtitle = [agentName, queueName].filter(Boolean).join(' • ');
+      const direction = (data.direction ?? '').toUpperCase();
+
+      return b`
+      <div class="event-card-wrapper">
+        <div class="rail-dot green"></div>
+        <div class="event-card call-card green">
+          <div class="card-top-row">
+            ${this._renderSourceBadge('telephony')}
+            <span class="card-timestamp">${formatRelativeTime(timestamp)}</span>
+          </div>
+          <div class="call-card-body">
+            <div class="call-disposition">${disposition}</div>
+            ${subtitle ? b`<div class="call-subtitle">${subtitle}</div>` : A}
+            ${direction ? b`<div class="call-direction">${direction}</div>` : A}
+          </div>
+        </div>
+      </div>
+    `;
+    }
+
     _renderTimeline() {
       const events = this._events;
       const items = [];
@@ -1239,7 +1305,8 @@
         `);
           lastLabel = label;
         }
-        items.push(this._renderCard(event));
+        const isCall = (event.type ?? '').toLowerCase().startsWith('task:');
+        items.push(isCall ? this._renderCallCard(event) : this._renderCard(event));
       }
 
       return b`

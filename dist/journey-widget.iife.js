@@ -890,22 +890,37 @@
       }
     }
 
+    // Poll until window.Desktop is injected by the WxCC framework (up to ~10 s)
+    _waitForDesktop(timeoutMs = 10000) {
+      if (window.Desktop) return Promise.resolve(window.Desktop);
+      return new Promise(resolve => {
+        const deadline = Date.now() + timeoutMs;
+        const timer = setInterval(() => {
+          if (window.Desktop || Date.now() >= deadline) {
+            clearInterval(timer);
+            resolve(window.Desktop ?? null);
+          }
+        }, 200);
+      });
+    }
+
     async _initDesktopSDK() {
-      const Desktop = window.Desktop;
+      const Desktop = await this._waitForDesktop();
       if (!Desktop) {
-        console.warn('[journey-widget] window.Desktop not found — running in standalone mode');
+        console.warn('[cj-timeline-widget] window.Desktop unavailable after 10 s — relying on interactionData property');
         return;
       }
 
       try {
-        await Desktop.actions.fireGeneralActions({ type: 'IS_STATION_AVAILABLE' });
-        this._sdkReady = true;
-      } catch {
-        // Some SDK versions don't require this; proceed anyway
-        this._sdkReady = true;
-      }
+        // config.init() is required before subscribing to events in most SDK versions
+        if (typeof Desktop.config?.init === 'function') {
+          await Desktop.config.init();
+        }
+      } catch { /* already initialized or not required */ }
 
-      // eAgentContact is the canonical Desktop SDK event for all contact state changes
+      this._sdkReady = true;
+
+      // eAgentContact fires for all contact state changes
       Desktop.agentContact.addEventListener('eAgentContact', (e) => {
         const payload = e.data ?? e.detail?.data ?? e.detail ?? e;
         const interaction = payload.interaction ?? payload.interactionData ?? payload;
@@ -916,10 +931,10 @@
           return;
         }
 
-        const state = (interaction.state ?? payload.type ?? '').toLowerCase();
+        const state = (interaction.state ?? '').toLowerCase();
         if (state === 'connected' || state === 'accepted' || state === 'wrapup') {
           this._onContactAccepted(interaction);
-        } else if (state === 'ended' || state === 'wrapup' && interaction.isTerminated) {
+        } else if (state === 'ended') {
           this._onContactEnded();
         }
       });
@@ -956,7 +971,9 @@
 
     async _loadJourney() {
       try {
-        const token = await window.Desktop.authorization.getToken();
+        const Desktop = await this._waitForDesktop();
+        if (!Desktop) throw Object.assign(new Error('Desktop SDK unavailable'), { code: 'AUTH_ERROR' });
+        const token = await Desktop.authorization.getToken();
 
         if (!this._identityId) {
           this._identityId = await resolveIdentity(this.baseUrl, token, this._customerIdentity);

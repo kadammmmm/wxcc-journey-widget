@@ -1040,7 +1040,7 @@
       return b`
       <div class="header">
         <div class="header-left">
-          <span class="header-title">Customer Journey</span>
+          <span class="header-title">Journey Timeline</span>
         </div>
         <div class="header-right">
           ${_interactionEnded

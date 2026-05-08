@@ -901,6 +901,7 @@
       _errorMsg: { state: true },
       _errorCode: { state: true },
       _expandedCards: { state: true },
+      _debugRaw: { state: true },
     };
 
     static styles = styles;
@@ -920,6 +921,7 @@
       this._errorMsg = null;
       this._errorCode = null;
       this._expandedCards = new Set();
+      this._debugRaw = null;
       this._pollTimer = null;
       this._identityId = null;
       this._customerIdentity = null;
@@ -993,8 +995,10 @@
         }
 
         const raw = await fetchJourneyEvents(this.baseUrl, token, this.workspaceId, this.organizationId, this._customerIdentity);
-        console.log('[cj-timeline] raw event types:', [...new Set(raw.map(e => e.type))]);
-        console.log('[cj-timeline] first 3 raw events:', JSON.stringify(raw.slice(0, 3), null, 2));
+        this._debugRaw = {
+          types: [...new Set(raw.map(e => e.type))],
+          first: raw[0] ?? null,
+        };
         // Keep task:ended (completed call records) + all non-task journey events.
         // Drop intermediate task state events (new/connect/connected/parked/wrapup) — they're noise.
         const events = raw
@@ -1322,10 +1326,19 @@
     }
 
     render() {
-      const { _state } = this;
+      const { _state, _debugRaw } = this;
       return b`
       <div class="widget">
         ${this._renderHeader()}
+        ${_debugRaw ? b`
+          <div style="margin:8px;padding:8px;background:#fffbe6;border:1px solid #f0c040;border-radius:6px;font-size:11px;font-family:monospace;white-space:pre-wrap;overflow-x:auto;color:#333;">
+<b>DEBUG — event types (${_debugRaw.types.length}):</b>
+${_debugRaw.types.join('\n')}
+
+<b>First event:</b>
+${JSON.stringify(_debugRaw.first, null, 2)}
+          </div>
+        ` : A}
         ${_state === STATE.IDLE    ? this._renderIdle()    : A}
         ${_state === STATE.LOADING ? this._renderLoading() : A}
         ${_state === STATE.ERROR   ? this._renderError()   : A}

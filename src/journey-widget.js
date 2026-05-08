@@ -1,6 +1,5 @@
 import { LitElement, html, nothing } from 'lit';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
-import { Desktop } from '@wxcc-desktop/sdk';
 import { styles } from './styles.js';
 import { ICONS, getIconForSource } from './icons.js';
 import { formatRelativeTime, getDateGroupLabel } from './time-utils.js';
@@ -47,10 +46,12 @@ function humanizeKey(key) {
 
 class JourneyWidget extends LitElement {
   static properties = {
-    baseUrl: { type: String, attribute: 'base-url' },
-    workspaceId: { type: String, attribute: 'workspace-id' },
-    // Injected by the WxCC Desktop framework — try both property and attribute forms
-    interactionData: { type: Object, attribute: 'interaction-data' },
+    baseUrl:        { type: String, attribute: 'base-url' },
+    workspaceId:    { type: String, attribute: 'workspace-id' },
+    organizationId: { type: String, attribute: 'organization-id' },
+    // Injected by the Desktop framework via $STORE bindings in the layout JSON
+    bearerToken:    { type: String, attribute: 'bearer-token' },
+    interactionData: { type: Object },
     // internal reactive state
     _state: { state: true },
     _events: { state: true },
@@ -68,6 +69,8 @@ class JourneyWidget extends LitElement {
     super();
     this.baseUrl = 'https://api-jds.wxdap-produs1.webex.com';
     this.workspaceId = '';
+    this.organizationId = '';
+    this.bearerToken = '';
     this.interactionData = null;
     this._state = STATE.IDLE;
     this._events = [];
@@ -80,12 +83,10 @@ class JourneyWidget extends LitElement {
     this._pollTimer = null;
     this._identityId = null;
     this._customerIdentity = null;
-    this._sdkReady = false;
   }
 
   connectedCallback() {
     super.connectedCallback();
-    this._initDesktopSDK();
   }
 
   disconnectedCallback() {
@@ -109,34 +110,6 @@ class JourneyWidget extends LitElement {
     if (state === 'connected' || state === 'accepted' || state === 'wrapup') {
       this._onContactAccepted(data);
     }
-  }
-
-  async _initDesktopSDK() {
-    try {
-      await Desktop.config.init();
-      this._sdkReady = true;
-    } catch (err) {
-      console.error('[cj-timeline] Desktop.config.init() failed:', err);
-      return;
-    }
-
-    Desktop.agentContact.addEventListener('eAgentContact', (e) => {
-      const payload = e.data ?? e.detail?.data ?? e.detail ?? e;
-      const interaction = payload.interaction ?? payload.interactionData ?? payload;
-      if (!interaction) return;
-
-      if (payload.isTerminated || interaction.isTerminated) {
-        this._onContactEnded();
-        return;
-      }
-
-      const state = (interaction.state ?? '').toLowerCase();
-      if (state === 'connected' || state === 'accepted' || state === 'wrapup') {
-        this._onContactAccepted(interaction);
-      } else if (state === 'ended') {
-        this._onContactEnded();
-      }
-    });
   }
 
   async _onContactAccepted(interaction) {
@@ -172,13 +145,14 @@ class JourneyWidget extends LitElement {
     try {
       if (!this.workspaceId) throw Object.assign(new Error('workspace-id property is not configured'), { code: 'API_ERROR' });
 
-      const token = await Desktop.authorization.getToken();
+      const token = this.bearerToken;
+      if (!token) throw Object.assign(new Error('No bearer token — check $STORE.auth.accessToken binding'), { code: 'AUTH_ERROR' });
 
       if (!this._identityId) {
-        this._identityId = await resolveIdentity(this.baseUrl, token, this.workspaceId, this._customerIdentity);
+        this._identityId = await resolveIdentity(this.baseUrl, token, this.workspaceId, this.organizationId, this._customerIdentity);
       }
 
-      const events = await fetchJourneyEvents(this.baseUrl, token, this.workspaceId, this._identityId);
+      const events = await fetchJourneyEvents(this.baseUrl, token, this.workspaceId, this.organizationId, this._customerIdentity);
       this._events = events;
       this._state = events.length === 0 ? STATE.EMPTY : STATE.LOADED;
       this._statusText = 'Updated just now';

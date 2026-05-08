@@ -44,6 +44,15 @@ function humanizeKey(key) {
     .replace(/\b\w/g, c => c.toUpperCase());
 }
 
+/** Format a field value — detects 13-digit epoch-ms timestamps. */
+function formatFieldValue(v) {
+  if (/^\d{13}$/.test(v)) {
+    try { return new Date(Number(v)).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }); }
+    catch { /* fall through */ }
+  }
+  return v;
+}
+
 class JourneyWidget extends LitElement {
   static properties = {
     baseUrl:        { type: String, attribute: 'base-url' },
@@ -152,7 +161,11 @@ class JourneyWidget extends LitElement {
         this._identityId = await resolveIdentity(this.baseUrl, token, this.workspaceId, this.organizationId, this._customerIdentity);
       }
 
-      const events = await fetchJourneyEvents(this.baseUrl, token, this.workspaceId, this.organizationId, this._customerIdentity);
+      const raw = await fetchJourneyEvents(this.baseUrl, token, this.workspaceId, this.organizationId, this._customerIdentity);
+      // Strip internal WxCC telephony task events — agents don't need to see these
+      const events = raw
+        .filter(evt => !(evt.type ?? '').toLowerCase().startsWith('task:'))
+        .slice(0, 25);
       this._events = events;
       this._state = events.length === 0 ? STATE.EMPTY : STATE.LOADED;
       this._statusText = 'Updated just now';
@@ -356,7 +369,7 @@ class JourneyWidget extends LitElement {
                 <div class="field-grid">
                   ${primaryFields.map(({ k, v }) => html`
                     <span class="field-label ${k === 'price' ? 'price-label' : ''}">${humanizeKey(k)}</span>
-                    <span class="field-value ${k === 'price' ? 'price-value' : ''}">${v}</span>
+                    <span class="field-value ${k === 'price' ? 'price-value' : ''}">${formatFieldValue(v)}</span>
                   `)}
                 </div>
               ` : nothing}
@@ -373,7 +386,7 @@ class JourneyWidget extends LitElement {
                     <div class="field-grid">
                       ${secondaryFields.map(({ k, v }) => html`
                         <span class="field-label">${humanizeKey(k)}</span>
-                        <span class="field-value">${v}</span>
+                        <span class="field-value">${formatFieldValue(v)}</span>
                       `)}
                     </div>
                   </div>

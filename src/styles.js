@@ -61,6 +61,9 @@ export const styles = css`
     height: 100%;
     background: var(--cj-bg);
     overflow: hidden;
+    max-width: 720px;
+    margin: 0 auto;
+    width: 100%;
   }
 
   .header {
